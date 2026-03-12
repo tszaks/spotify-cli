@@ -18,3 +18,24 @@ export function formatTrackSummary(track: Record<string, any> | null | undefined
 
   return `${track.name ?? "Unknown track"} - ${artists}`;
 }
+
+export function formatSearchItemSummary(item: Record<string, any> | null | undefined): string {
+  if (!item) {
+    return "Unknown item";
+  }
+
+  if (Array.isArray(item.artists) && item.artists.length > 0) {
+    const artists = item.artists
+      .map((artist: { name?: string }) => artist.name)
+      .filter(Boolean)
+      .join(", ");
+
+    return `${item.name ?? "Unknown item"} - ${artists}`;
+  }
+
+  if (item.owner?.display_name) {
+    return `${item.name ?? "Unknown item"} - ${item.owner.display_name}`;
+  }
+
+  return item.name ?? "Unknown item";
+}

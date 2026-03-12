@@ -9,12 +9,26 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "spotify",
+    "cli",
+    "spotify-connect",
+    "spotify-web-api",
+    "typescript"
+  ],
+  "author": "Tyler Szakacs",
   "bin": {
     "spot": "dist/index.js"
   },
   "license": "MIT",
+  "homepage": "https://github.com/tszaks/spotify-cli#readme",
+  "bugs": {
+    "url": "https://github.com/tszaks/spotify-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tszaks/spotify-cli.git"
+  },
   "type": "module",
   "dependencies": {
     "commander": "^14.0.3",

@@ -19,7 +19,12 @@ import {
   parseBoundedInteger,
   parseOnOffState,
 } from "./input-validation.js";
-import { formatTrackSummary, printHeading, printJson } from "./output.js";
+import {
+  formatSearchItemSummary,
+  formatTrackSummary,
+  printHeading,
+  printJson,
+} from "./output.js";
 import {
   normalizeSearchLimit,
   resolveDevice,
@@ -103,7 +108,7 @@ async function getResolvedDeviceId(selector?: string): Promise<string | undefine
 function printSearchResults(data: Record<string, any>): void {
   for (const [type, payload] of Object.entries(data)) {
     const items = Array.isArray((payload as Record<string, any>).items)
-      ? (payload as Record<string, any>).items
+      ? (payload as Record<string, any>).items.filter(Boolean)
       : [];
 
     printHeading(type);
@@ -113,12 +118,7 @@ function printSearchResults(data: Record<string, any>): void {
     }
 
     for (const item of items) {
-      const artists = Array.isArray(item.artists)
-        ? item.artists.map((artist: { name?: string }) => artist.name).filter(Boolean).join(", ")
-        : undefined;
-
-      const summary = artists ? `${item.name} - ${artists}` : item.name;
-      console.log(`${summary} (${item.uri})`);
+      console.log(`${formatSearchItemSummary(item)} (${item.uri})`);
     }
   }
 }
