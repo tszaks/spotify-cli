@@ -1,0 +1,29 @@
+{
+  "name": "spotify-cli",
+  "version": "1.0.0",
+  "description": "Control Spotify from the command line using the Spotify Web API",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "bin": {
+    "spot": "dist/index.js"
+  },
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "commander": "^14.0.3",
+    "open": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  }
+}
