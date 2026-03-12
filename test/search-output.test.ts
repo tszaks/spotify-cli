@@ -21,6 +21,15 @@ describe("formatSearchItemSummary", () => {
     ).toBe("Rock Mix - Tyler");
   });
 
+  it("falls back to the item name for non-track search results without artists or owners", () => {
+    expect(
+      formatSearchItemSummary({
+        name: "NF",
+        type: "artist",
+      }),
+    ).toBe("NF");
+  });
+
   it("handles null items safely", () => {
     expect(formatSearchItemSummary(null)).toBe("Unknown item");
   });

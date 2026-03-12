@@ -20,6 +20,12 @@
   "bin": {
     "spot": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "license": "MIT",
   "homepage": "https://github.com/tszaks/spotify-cli#readme",
   "bugs": {
