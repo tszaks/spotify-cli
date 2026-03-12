@@ -58,7 +58,7 @@ const program = new Command();
 program
   .name("spot")
   .description("Control Spotify from the command line")
-  .version("1.0.0");
+  .version("1.1.0");
 
 async function runWithHandling(action: () => Promise<void>): Promise<void> {
   try {
