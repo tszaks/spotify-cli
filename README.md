@@ -42,7 +42,7 @@ Source docs:
 2. Add this redirect URI to the app allowlist:
 
 ```text
-http://127.0.0.1:45456/callback
+https://szakacsmedia.com/spotify-cli/callback
 ```
 
 3. Install dependencies and build:
@@ -68,9 +68,11 @@ spot config set-client-id YOUR_SPOTIFY_CLIENT_ID
 
 ```bash
 spot auth login
+spot auth finish 'PASTE_THE_FINAL_REDIRECT_URL_HERE'
 ```
 
 If the browser does not open automatically, the CLI prints the exact Spotify auth URL so you can paste it into any browser yourself.
+After Spotify finishes redirecting, copy the full final browser URL and pass it to `spot auth finish`.
 
 ## Common commands
 
@@ -115,7 +117,7 @@ Environment variables also work:
 
 ```bash
 export SPOTIFY_CLIENT_ID=YOUR_SPOTIFY_CLIENT_ID
-export SPOTIFY_REDIRECT_URI=http://127.0.0.1:45456/callback
+export SPOTIFY_REDIRECT_URI=https://szakacsmedia.com/spotify-cli/callback
 ```
 
 ## Development

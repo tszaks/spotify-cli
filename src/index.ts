@@ -3,6 +3,12 @@
 import { Command } from "commander";
 import open from "open";
 
+import { parseAuthorizationCallbackUrl } from "./auth-callback.js";
+import {
+  deleteAuthSession,
+  readAuthSession,
+  writeAuthSession,
+} from "./auth-session.js";
 import {
   getResolvedConfig,
   readConfig,
@@ -24,7 +30,6 @@ import {
   clearStoredTokens,
   completeAuthorizationWithCode,
   getStoredTokens,
-  startAuthorizationCallbackSession,
   spotifyRequest,
   type SpotifyApiError,
 } from "./spotify-client.js";
@@ -181,6 +186,7 @@ const authCommand = program.command("auth").description("Spotify login helpers")
 authCommand
   .command("login")
   .option("--client-id <clientId>", "Store a client ID before starting login")
+  .option("--redirect-uri <redirectUri>", "Override and store the redirect URI before starting login")
   .description("Log into Spotify with PKCE in your browser")
   .action((options) =>
     runWithHandling(async () => {
@@ -188,10 +194,20 @@ authCommand
         await setClientId(options.clientId);
       }
 
+      if (options.redirectUri) {
+        await setRedirectUri(options.redirectUri);
+      }
+
       const { authUrl, codeVerifier, state } = await buildAuthorizationUrl();
-      const callbackSession = await startAuthorizationCallbackSession(state);
-      console.log("Waiting for Spotify authorization callback...");
-      console.log(`If your browser does not open, paste this URL manually:\n${authUrl}\n`);
+      await writeAuthSession({
+        codeVerifier,
+        createdAt: Date.now(),
+        state,
+      });
+
+      console.log("Opening Spotify authorization in your browser...");
+      console.log(`After Spotify redirects, copy the full final URL and run:\nspot auth finish '<redirected-url>'\n`);
+      console.log(`Authorization URL:\n${authUrl}\n`);
 
       try {
         await open(authUrl);
@@ -199,9 +215,23 @@ authCommand
         const reason = error instanceof Error ? error.message : String(error);
         console.error(`Automatic browser launch failed: ${reason}`);
       }
+    }),
+  );
 
-      const code = await callbackSession.waitForCode;
-      const tokens = await completeAuthorizationWithCode(codeVerifier, code);
+authCommand
+  .command("finish")
+  .argument("<callbackUrl>", "The full redirect URL after Spotify authorization")
+  .description("Finish a pending Spotify login using the redirected callback URL")
+  .action((callbackUrl) =>
+    runWithHandling(async () => {
+      const session = await readAuthSession();
+      if (!session) {
+        throw new Error("No pending Spotify auth session found. Run `spot auth login` first.");
+      }
+
+      const code = parseAuthorizationCallbackUrl(callbackUrl, session.state);
+      const tokens = await completeAuthorizationWithCode(session.codeVerifier, code);
+      await deleteAuthSession();
       console.log(`Connected. Token expires at ${new Date(tokens.expiresAt).toLocaleString()}.`);
     }),
   );

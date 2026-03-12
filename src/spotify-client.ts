@@ -1,4 +1,3 @@
-import { createServer } from "node:http";
 import { URL } from "node:url";
 
 import { getResolvedConfig } from "./config-store.js";
@@ -14,7 +13,6 @@ import {
 
 const API_BASE_URL = "https://api.spotify.com/v1";
 const TOKEN_URL = "https://accounts.spotify.com/api/token";
-const AUTH_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const REQUIRED_SCOPES = [
   "user-modify-playback-state",
@@ -184,118 +182,6 @@ export async function spotifyRequest<T>(
   }
 
   return json as T;
-}
-
-export type AuthorizationCallbackSession = {
-  waitForCode: Promise<string>;
-  cancel: (reason?: string) => Promise<void>;
-};
-
-export async function startAuthorizationCallbackSession(
-  expectedState: string,
-  timeoutMs = AUTH_CALLBACK_TIMEOUT_MS,
-): Promise<AuthorizationCallbackSession> {
-  const { redirectUri } = await getResolvedConfig();
-  const callbackUrl = new URL(redirectUri);
-  const port = Number(callbackUrl.port || (callbackUrl.protocol === "https:" ? 443 : 80));
-  const host = callbackUrl.hostname;
-  const path = callbackUrl.pathname;
-
-  return await new Promise<AuthorizationCallbackSession>((resolve, reject) => {
-    let settled = false;
-    let timeoutHandle: NodeJS.Timeout | undefined;
-
-    let resolveWaitForCode: (code: string) => void = () => undefined;
-    let rejectWaitForCode: (error: Error) => void = () => undefined;
-
-    const waitForCode = new Promise<string>((resolveCode, rejectCode) => {
-      resolveWaitForCode = resolveCode;
-      rejectWaitForCode = rejectCode;
-    });
-
-    const httpServer = createServer((req, res) => {
-      if (!req.url) {
-        res.statusCode = 400;
-        res.end("Missing callback URL.");
-        return;
-      }
-
-      const requestUrl = new URL(req.url, `${callbackUrl.protocol}//${callbackUrl.host}`);
-      if (requestUrl.pathname !== path) {
-        res.statusCode = 404;
-        res.end("Not found.");
-        return;
-      }
-
-      const error = requestUrl.searchParams.get("error");
-      if (error) {
-        res.statusCode = 400;
-        res.end(`Spotify authorization failed: ${error}`);
-        void cancel(`Spotify authorization failed: ${error}`);
-        return;
-      }
-
-      const state = requestUrl.searchParams.get("state");
-      const code = requestUrl.searchParams.get("code");
-
-      if (!code || state !== expectedState) {
-        res.statusCode = 400;
-        res.end("Authorization response was invalid.");
-        void cancel("Authorization response was invalid.");
-        return;
-      }
-
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.end(
-        "<html><body><h1>Spotify CLI connected.</h1><p>You can close this tab and go back to the terminal.</p></body></html>",
-      );
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeoutHandle);
-      httpServer.close();
-      resolveWaitForCode(code);
-    });
-
-    const closeServer = async (): Promise<void> => {
-      clearTimeout(timeoutHandle);
-
-      if (!httpServer.listening) {
-        return;
-      }
-
-      await new Promise<void>((resolveClose) => {
-        httpServer.close(() => resolveClose());
-      });
-    };
-
-    const cancel = async (reason = "Spotify authorization was cancelled."): Promise<void> => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      await closeServer();
-      rejectWaitForCode(new Error(reason));
-    };
-
-    httpServer.once("error", reject);
-    httpServer.listen(port, host, () => {
-      timeoutHandle = setTimeout(() => {
-        void cancel(
-          "Timed out waiting for the Spotify browser callback. Run `spot auth login` again and finish the browser step within 5 minutes.",
-        );
-      }, timeoutMs);
-
-      resolve({
-        waitForCode,
-        cancel,
-      });
-    });
-  });
 }
 
 export async function buildAuthorizationUrl(): Promise<{
