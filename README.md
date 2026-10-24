@@ -1,19 +1,47 @@
-# Spotify CLI
+<h1 align="center">Spotify CLI</h1>
 
-Control Spotify from the command line with Spotify Web API + Spotify Connect.
+<p align="center">
+  Control Spotify from the command line with the Spotify Web API and Spotify Connect.
+</p>
 
-This tool controls the Spotify app running on your phone, desktop, or speaker. It does not play audio inside the terminal.
+<p align="center">
+  <a href="https://github.com/tszaks/spotify-cli/actions/workflows/ci.yml"><img src="https://github.com/tszaks/spotify-cli/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/tszaks/spotify-cli/releases/latest"><img src="https://img.shields.io/github/v/release/tszaks/spotify-cli" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/tszaks/spotify-cli" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/node-20%2B-brightgreen" alt="Node 20 or later">
+</p>
 
-## What it does
+```console
+$ spot --help
+Usage: spot [options] [command]
 
-- Log in with Spotify PKCE auth
-- List your available Spotify Connect devices
-- Transfer playback between devices
-- Play, pause, skip, seek, shuffle, repeat, and set volume
-- Search Spotify and print reusable URIs
-- View the current queue and add tracks to it
-- Show recently played tracks
-- Save, remove, and check library items
+Control Spotify from the command line
+
+Commands:
+  config                    Manage local CLI config
+  auth                      Spotify login helpers
+  me                        Show the current Spotify account
+  search [options] <query>  Search Spotify and print URIs you can reuse in other
+                            commands
+  recent [options]          Show recently played tracks
+  devices                   Inspect Spotify Connect devices
+  playback                  Control Spotify playback
+  library                   Save or inspect library items
+```
+
+Spotify CLI controls the Spotify app running on your phone, desktop, or speaker. It does not play audio inside the terminal. It is for people who live in a terminal and want to pause, skip, search or queue a track without reaching for the mouse, and for scripts that need to drive Spotify.
+
+It uses Spotify's official Web API with the PKCE login flow, so you never handle a client secret. Tokens stay in a file on your machine. The command is called `spot`.
+
+## Features
+
+- **Spotify PKCE login.** No client secret, and a secure redirect finishes the flow.
+- **Device control.** List your Spotify Connect devices and transfer playback between them.
+- **Full playback control.** Play, pause, skip, seek, shuffle, repeat, and set volume.
+- **Search that prints reusable URIs.** Paste the result straight into `spot playback play`.
+- **Queue and history.** View the current queue, add tracks, and show recently played tracks.
+- **Library.** Save, remove, and check library items.
+- **Script friendly.** Plain output with no styling dependencies.
 
 ## Requirements
 
@@ -25,13 +53,15 @@ This tool controls the Spotify app running on your phone, desktop, or speaker. I
 ## Install
 
 ```bash
+git clone https://github.com/tszaks/spotify-cli.git
+cd spotify-cli
 npm install
 npm run build
 npm link
 spot --help
 ```
 
-That gives you a global `spot` command.
+That gives you a global `spot` command. The package is not published to npm.
 
 ## Create a Spotify app
 
@@ -141,9 +171,10 @@ spot playback queue
 spot playback add spotify:track:4uLU6hMCjMI75M1A2tKUQC
 ```
 
-### Search and recent
+### Account, search and recent
 
 ```bash
+spot me
 spot search "daft punk"
 spot recent
 ```
@@ -217,7 +248,7 @@ hash -r
 
 Current release: `v1.1.0`
 
-Next release target: `v1.2.0`
+Next release target: `v1.2.0` (not scheduled)
 
 - better search-to-play shortcuts
 - stronger playlist workflows
@@ -232,6 +263,14 @@ npm run build
 node dist/index.js --help
 ```
 
+CI runs `npm ci`, `npm run build` and `npm test` on Node 20 and 22. A design note from the first build is in [docs/plans](docs/plans/2026-03-12-spotify-cli-design.md).
+
+## Contributing
+
+Bug reports and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first. Security problems go through [SECURITY.md](SECURITY.md). Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+Docs: [design note](docs/plans/2026-03-12-spotify-cli-design.md) · [AGENTS.md](AGENTS.md) · [changelog](CHANGELOG.md)
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Tyler Szakacs
