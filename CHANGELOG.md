@@ -1,28 +1,26 @@
 # Changelog
 
-## v1.2.0
+All notable changes to Spotify CLI are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-Planned release goal: much fuller Spotify control coverage.
+## [Unreleased]
 
-Target areas:
+Planned for a later release, not committed to a date:
 
-- natural-language style play commands
-- richer playlist actions
-- broader command coverage across the supported Spotify Web API control surface
-- stronger end-to-end smoke coverage
-- smoother search-to-action workflows
+- Natural-language style play commands.
+- Richer playlist actions.
+- Broader command coverage across the supported Spotify Web API control surface.
+- Stronger end-to-end smoke coverage.
+- Smoother search-to-action workflows.
 
-## v1.1.0
+## [1.1.0] - 2026-03-12
 
 First public release.
 
-Included:
-
-- PKCE login flow
-- secure redirect-based auth finish flow
-- Spotify Connect device listing and transfer
-- playback control commands
-- queue inspection and add-to-queue
-- search
-- recent tracks
-- generic library save, remove, and contains support
+### Added
+- PKCE login flow, with a secure redirect-based `auth finish` step.
+- Spotify Connect device listing and transfer.
+- Playback control commands.
+- Queue inspection and add-to-queue.
+- Search that prints reusable URIs.
+- Recently played tracks.
+- Generic library save, remove, and contains support.

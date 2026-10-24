@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in Spotify CLI does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please remove tokens, client IDs and any callback URL with a `code=` value from what you paste.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact `spot` commands and their output.
+      placeholder: |
+        1. spot devices list
+        2. spot playback play ...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: "macOS 26.5"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: "22.11.0"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Spotify CLI version
+      description: Output of `spot --version`
+      placeholder: "1.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: premium
+    attributes:
+      label: Is the Spotify account Premium?
+      options:
+        - "Yes"
+        - "No"
+        - "Not sure"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
