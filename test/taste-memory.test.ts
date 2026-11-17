@@ -414,5 +414,9 @@ describe("stableNodePath", () => {
 
     expect(await stableNodePath(join(cellar, "node"), [other, bin].join(":"))).toBe(join(bin, "node"));
     expect(await stableNodePath(join(cellar, "node"), other)).toBe(join(cellar, "node"));
+
+    // A relative PATH entry would mean a different file when launchd starts in /.
+    const { relative } = await import("node:path");
+    expect(await stableNodePath(join(cellar, "node"), relative(process.cwd(), bin))).toBe(join(cellar, "node"));
   });
 });

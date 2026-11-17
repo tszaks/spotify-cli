@@ -1,6 +1,6 @@
 import { access, link, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join } from "node:path";
 
 import { readSession } from "./dj.js";
 import { SpotError, toErrorPayload } from "./errors.js";
@@ -338,7 +338,8 @@ function requireMac(): void {
 // That folder is deleted at the next Node upgrade. A PATH entry that links to the same file stays.
 export async function stableNodePath(execPath: string, pathEnv: string | undefined): Promise<string> {
   const real = await realpath(execPath).catch(() => execPath);
-  for (const dir of (pathEnv ?? "").split(delimiter).filter(Boolean)) {
+  // launchd starts in /, so only an absolute folder names the same file there.
+  for (const dir of (pathEnv ?? "").split(delimiter).filter(isAbsolute)) {
     const candidate = join(dir, "node");
     try {
       await access(candidate);
