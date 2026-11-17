@@ -9,6 +9,11 @@ Ideas for a later release, not committed to a date:
 - A login that finishes by itself with a local callback address.
 - An MCP server mode.
 
+## [2.0.2] - 2026-11-16
+
+### Fixed
+- `spot watch install` wrote the versioned Node path (for example `/opt/homebrew/Cellar/node/26.12.0/bin/node`), so the watcher stopped after a Node upgrade. It now uses the `node` link on PATH, for example `/opt/homebrew/bin/node`. Run `spot watch install` again to update the file.
+
 ## [2.0.1] - 2026-11-16
 
 Taste memory. An agent can now learn the user's taste over time, and the tool shows if it learns.

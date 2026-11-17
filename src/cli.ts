@@ -83,7 +83,7 @@ import {
   watchStatus,
 } from "./watch.js";
 
-export const VERSION = "2.0.1";
+export const VERSION = "2.0.2";
 
 export type OutputMode = "json" | "text";
 

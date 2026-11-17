@@ -1,6 +1,6 @@
-import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, link, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { readSession } from "./dj.js";
 import { SpotError, toErrorPayload } from "./errors.js";
@@ -334,7 +334,26 @@ function requireMac(): void {
   }
 }
 
-export async function installLaunchAgent(script: string): Promise<{ path: string; loaded: boolean }> {
+// process.execPath is the real file, for example /opt/homebrew/Cellar/node/26.12.0/bin/node.
+// That folder is deleted at the next Node upgrade. A PATH entry that links to the same file stays.
+export async function stableNodePath(execPath: string, pathEnv: string | undefined): Promise<string> {
+  const real = await realpath(execPath).catch(() => execPath);
+  for (const dir of (pathEnv ?? "").split(delimiter).filter(Boolean)) {
+    const candidate = join(dir, "node");
+    try {
+      await access(candidate);
+      if (candidate !== real && (await realpath(candidate)) === real) {
+        return candidate;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return execPath;
+}
+
+export async function installLaunchAgent(script: string): Promise<{ path: string; loaded: boolean; node: string }> {
   requireMac();
   const path = launchAgentPath();
   const env: Record<string, string> = { SPOT_OUTPUT: "json", PATH: process.env.PATH ?? "/usr/bin:/bin" };
@@ -343,7 +362,8 @@ export async function installLaunchAgent(script: string): Promise<{ path: string
   }
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, launchAgentPlist(process.execPath, script, env), "utf8");
+  const node = await stableNodePath(process.execPath, process.env.PATH);
+  await writeFile(path, launchAgentPlist(node, script, env), "utf8");
 
   const domain = `gui/${process.getuid?.() ?? 501}`;
   await runtime.launchctl(["bootout", `${domain}/${LAUNCH_LABEL}`]);
@@ -352,7 +372,7 @@ export async function installLaunchAgent(script: string): Promise<{ path: string
     throw new SpotError("INTERNAL", `launchctl did not start the watcher: ${loaded.output}`, { extra: { path } });
   }
 
-  return { path, loaded: true };
+  return { path, loaded: true, node };
 }
 
 export async function uninstallLaunchAgent(): Promise<{ path: string; removed: boolean }> {
