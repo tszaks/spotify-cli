@@ -24,3 +24,10 @@ describe("context uri detection", () => {
     expect(isContextUri("spotify:track:123")).toBe(false);
   });
 });
+
+describe("links with a language part", () => {
+  it("reads the type and id after /intl-xx/", () => {
+    expect(normalizeSpotifyUri("https://open.spotify.com/intl-de/track/4uLU6hMCjMI75M1A2tKUQC?si=abc"))
+      .toBe("spotify:track:4uLU6hMCjMI75M1A2tKUQC");
+  });
+});

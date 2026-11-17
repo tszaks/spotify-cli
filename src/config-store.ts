@@ -1,11 +1,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { SpotError } from "./errors.js";
 import { CONFIG_PATH, DEFAULT_REDIRECT_URI } from "./paths.js";
 
 export type AppConfig = {
   clientId?: string;
   redirectUri?: string;
+  // Where music starts when no device is active. A device name or id.
+  defaultDevice?: string;
 };
 
 export async function readConfig(): Promise<AppConfig> {
@@ -43,14 +46,22 @@ export async function setRedirectUri(redirectUri: string): Promise<void> {
   });
 }
 
-export async function getResolvedConfig(): Promise<Required<AppConfig>> {
+export async function setDefaultDevice(defaultDevice: string | undefined): Promise<void> {
+  const current = await readConfig();
+  await writeConfig({
+    ...current,
+    defaultDevice,
+  });
+}
+
+export async function getResolvedConfig(): Promise<{ clientId: string; redirectUri: string }> {
   const config = await readConfig();
   const clientId = process.env.SPOTIFY_CLIENT_ID ?? config.clientId;
 
   if (!clientId) {
-    throw new Error(
-      "No Spotify client ID found. Run `spot config set-client-id <client-id>` or set SPOTIFY_CLIENT_ID.",
-    );
+    throw new SpotError("NOT_LOGGED_IN", "No Spotify client ID found.", {
+      hint: "Run `spot config set-client-id <client-id>` or set SPOTIFY_CLIENT_ID.",
+    });
   }
 
   return {
