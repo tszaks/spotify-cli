@@ -3,8 +3,9 @@ import { dirname } from "node:path";
 
 import { currentFeelings, type FeelingSummary, readFeelings } from "./feelings.js";
 import { type ListenEvent, readEvents } from "./listening.js";
-import { normalize } from "./match.js";
+import { baseTitle, normalize } from "./match.js";
 import { TASTE_NOTES_PATH } from "./paths.js";
+import { withFileLock } from "./token-store.js";
 
 // ---------- The taste notes file ----------
 
@@ -67,10 +68,13 @@ export function insertNote(file: string, section: string, text: string, day: str
 }
 
 export async function addNote(text: string, section = DEFAULT_SECTION, path = TASTE_NOTES_PATH): Promise<{ path: string; line: string }> {
-  const file = (await readNotes(path)) ?? NOTES_TEMPLATE;
   const day = new Date().toISOString().slice(0, 10);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, insertNote(file, section, text, day), "utf8");
+  // Read and write under one lock, or two agents that add a note at the same time lose one.
+  await withFileLock(`${path}.lock`, async () => {
+    const file = (await readNotes(path)) ?? NOTES_TEMPLATE;
+    await writeFile(path, insertNote(file, section, text, day), "utf8");
+  });
   return { path, line: `- ${text.trim()} (${day})` };
 }
 
@@ -95,8 +99,10 @@ function bump(map: Map<string, Count>, key: string, ended: ListenEvent["ended"])
   map.set(key, count);
 }
 
-export function songKey(event: Pick<ListenEvent, "uri" | "name" | "artists">): string {
-  return event.uri ?? `${normalize(event.name)}|${normalize(event.artists[0] ?? "")}`;
+// By title and first artist, not URI: the short Spotify download has no URIs, and one song
+// can have many URIs (single, album, remaster).
+export function songKey(event: Pick<ListenEvent, "name" | "artists">): string {
+  return `${normalize(baseTitle(event.name))}|${normalize(event.artists[0] ?? "")}`;
 }
 
 function label(event: Pick<ListenEvent, "name" | "artists">): string {

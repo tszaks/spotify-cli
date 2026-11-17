@@ -16,7 +16,8 @@ import {
 import type { NowPlaying } from "../src/playback.js";
 import { insertNote, NOTES_TEMPLATE, weeklyScore } from "../src/profile.js";
 import { emptyState, launchAgentPlist, observe, takeWatchLock } from "../src/watch.js";
-import { login, logout, spot } from "./helpers/cli.js";
+import { launchctlCalls, login, logout, spot } from "./helpers/cli.js";
+import { launchAgentPath } from "../src/watch.js";
 import { device, FakeSpotify, track } from "./helpers/fake-spotify.js";
 
 let spotify: FakeSpotify;
@@ -82,11 +83,18 @@ describe("the watcher rules (observe)", () => {
     expect(state.recorded).toBe(1);
   });
 
-  it("does not count time while paused", () => {
+  it("records a paused song that is replaced as stopped, not skipped, with no paused time", () => {
     let state = observe(emptyState(), playing("a", 10_000, { isPlaying: false }), 0, dj).state;
     state = observe(state, playing("a", 10_000, { isPlaying: false }), 600_000, dj).state;
     const result = observe(state, playing("b", 2_000), 620_000, dj);
-    expect(result.events[0]).toMatchObject({ ended: "skipped", playedMs: 10_000 });
+    expect(result.events[0]).toMatchObject({ ended: "stopped", playedMs: 10_000 });
+  });
+
+  it("does not count a gap with no polls (sleep, no network) as listening", () => {
+    const state = observe(emptyState(), playing("a", 10_000), 0, dj).state;
+    // 20 minutes later a different song plays. Nobody saw how "a" ended.
+    const result = observe(state, playing("b", 30_000), 1_200_000, dj);
+    expect(result.events[0]).toMatchObject({ ended: "stopped", playedMs: 10_000 });
   });
 
   it("records 'stopped' when the music stops: that is not a skip", () => {
@@ -177,6 +185,13 @@ describe("spot feel and the bans", () => {
 
     const kept = await spot(["playlist", "create", "Mix 2", "Loud - Song (Live)", "--include-banned"]);
     expect(kept.json.added.map((item: any) => item.uri)).toEqual([uri("live")]);
+  });
+
+  it("finds the artist of a URI input when an artist is banned", async () => {
+    await spot(["feel", "ban", "--artist", "Loud - Song (Live)"]);
+    const set = await spot(["dj", "start", "spotify:track:live", "https://open.spotify.com/track/one"]);
+    expect(set.json.tracks.map((item: any) => item.uri)).toEqual([uri("one")]);
+    expect(set.json.blocked[0]).toMatchObject({ uri: uri("live"), ban: { scope: "artist", label: "Loud" } });
   });
 
   it("forgets a ban after clear", async () => {
@@ -315,6 +330,31 @@ describe("spot taste profile, note and score", () => {
     expect(stop.json.learn).toContain("spot taste note");
   });
 
+  it("keeps both notes when two agents write at the same time", async () => {
+    await Promise.all(Array.from({ length: 5 }, (_, i) => spot(["taste", "note", `Lesson ${i}`])));
+    const text = await readFile(TASTE_NOTES_PATH, "utf8");
+    for (let i = 0; i < 5; i += 1) {
+      expect(text).toContain(`- Lesson ${i} (`);
+    }
+  });
+
+  it("counts an imported play and a watched play of one song as the same song", () => {
+    const now = Date.parse("2026-11-16T12:00:00Z");
+    const score = weeklyScore([
+      { ...event("Song", "finished", "2026-11-10T00:00:00Z"), uri: undefined, source: "import" },
+      event("Song (Remastered 2011)", "finished", "2026-11-15T00:00:00Z", { by: "dj" }),
+    ], 1, now);
+    expect(score[0].dj.knownSongs.plays).toBe(1);
+  });
+
+  it("spot taste score gives one row for each week", async () => {
+    await writeFile(LISTENING_PATH, `${JSON.stringify(event("a", "skipped", new Date(Date.now() - 60_000).toISOString(), { by: "dj" }))}\n`);
+    const result = await spot(["taste", "score", "--weeks", "3"]);
+    expect(result.json.score).toHaveLength(3);
+    expect(result.json.score[2].dj).toMatchObject({ plays: 1, skipRate: 1 });
+    expect((await spot(["taste", "score", "--weeks", "0"])).json.error.code).toBe("BAD_INPUT");
+  });
+
   it("keeps notes that the user wrote by hand", async () => {
     await writeFile(TASTE_NOTES_PATH, "# My notes\n\nI like it loud.\n");
     await spot(["taste", "note", "Test"]);
@@ -340,5 +380,24 @@ describe("watch run --once and a running watcher", () => {
     await release();
     expect(result.json.error).toMatchObject({ code: "BAD_INPUT" });
     expect(result.json.error.hint).toContain("spot watch status");
+  });
+});
+
+describe("spot watch install and uninstall", () => {
+  it.runIf(process.platform === "darwin")("writes the launchd file and starts it, then removes it", async () => {
+    launchctlCalls.length = 0;
+    const installed = await spot(["watch", "install"]);
+    expect(installed.json).toMatchObject({ ok: true, path: launchAgentPath(), loaded: true });
+    expect(await readFile(launchAgentPath(), "utf8")).toContain("<string>watch</string>");
+    expect(launchctlCalls.map((args) => args[0])).toEqual(["bootout", "bootstrap"]);
+    expect((await spot(["watch", "status"])).json.installed).toBe(true);
+
+    const removed = await spot(["watch", "uninstall"]);
+    expect(removed.json).toMatchObject({ ok: true, removed: true });
+    expect((await spot(["watch", "status"])).json.installed).toBe(false);
+  });
+
+  it.runIf(process.platform !== "darwin")("says that install works only on macOS", async () => {
+    expect((await spot(["watch", "install"])).json.error.code).toBe("BAD_INPUT");
   });
 });

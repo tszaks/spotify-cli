@@ -269,6 +269,22 @@ async function applyBans(result: ResolveResult, include: boolean): Promise<Songs
   }
 
   const feelings = currentFeelings(await readFeelings());
+
+  // A URI or link input has no artist names. Look them up, but only when an artist ban needs them.
+  if (feelings.some((feeling) => feeling.kind === "ban" && feeling.scope === "artist")) {
+    for (const item of result.resolved) {
+      if ((item.artists ?? []).length === 0 && item.uri.startsWith("spotify:track:")) {
+        const raw = await spotifyRequest<Record<string, any>>(`/tracks/${item.uri.split(":")[2]}`);
+        const track = toTrack(raw);
+        if (track) {
+          item.name = track.name;
+          item.artists = track.artists;
+          item.label = track.label;
+        }
+      }
+    }
+  }
+
   const blocked: Blocked[] = [];
   const resolved = result.resolved.filter((item) => {
     const ban = banFor(item, feelings);

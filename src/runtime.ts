@@ -7,6 +7,13 @@ export const runtime = {
       setTimeout(resolve, ms);
     }),
 
+  launchctl: (args: string[]): Promise<{ ok: boolean; output: string }> =>
+    new Promise((resolve) => {
+      execFile("launchctl", args, (error, stdout, stderr) => {
+        resolve({ ok: !error, output: `${stdout}${stderr}`.trim() });
+      });
+    }),
+
   // -g keeps Spotify in the background, so the app does not take the screen from the user.
   launchSpotify: (): Promise<boolean> =>
     new Promise((resolve) => {

@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -40,6 +39,10 @@ export type WatchState = {
 };
 
 export const POLL_MS = { playing: 20_000, paused: 60_000, idle: 120_000 };
+
+// While music plays, polls come every 20 seconds. A longer gap means the watcher did not run
+// (sleep, no network). Time that nobody saw is not counted as listening.
+export const MAX_GAP_MS = 90_000;
 
 export function emptyState(): WatchState {
   return { current: null, lastError: null, recorded: 0 };
@@ -108,12 +111,18 @@ export function observe(
   const track = now.active ? now.track : null;
   const progress = now.progressMs ?? 0;
 
+  // The previous song ended while it played, and a poll saw it shortly before: its end is known.
+  const seenToEnd = previous ? previous.playing && at - previous.seenAt <= MAX_GAP_MS : false;
+  const endOf = (current: Current): ListenEvent => seenToEnd
+    // It played until the new song started: (time since the last poll) - (new position).
+    ? finish(current, at - progress, current.progressMs + Math.max(0, at - current.seenAt - progress), true)
+    // Paused, or a gap with no polls: only the position that was seen is sure. Not a skip.
+    : finish(current, current.seenAt, current.progressMs, false);
+
   if (previous && track && track.uri === previous.uri) {
     // The same song. A big jump back means it started again (repeat, or the back button).
     if (progress + 5_000 < previous.progressMs) {
-      const elapsed = previous.playing ? at - previous.seenAt : 0;
-      const played = previous.progressMs + Math.max(0, elapsed - progress);
-      events.push(finish(previous, at - progress, played, true));
+      events.push(endOf(previous));
       return { state: { ...state, current: startCurrent(now, at, dj), recorded: state.recorded + events.length }, events };
     }
 
@@ -127,15 +136,8 @@ export function observe(
   }
 
   if (previous) {
-    if (track) {
-      // A new song. The old song played until the new one started: (time since the last poll) - (new position).
-      const elapsed = previous.playing ? at - previous.seenAt : 0;
-      const played = previous.progressMs + Math.max(0, elapsed - progress);
-      events.push(finish(previous, at - progress, played, true));
-    } else {
-      // The music stopped or Spotify closed. Only the position that was seen is sure.
-      events.push(finish(previous, previous.seenAt, previous.progressMs, false));
-    }
+    // With no new song, the music stopped or Spotify closed.
+    events.push(track ? endOf(previous) : finish(previous, previous.seenAt, previous.progressMs, false));
   }
 
   return {
@@ -205,29 +207,36 @@ function pidAlive(pid: number): boolean {
 export async function takeWatchLock(): Promise<() => Promise<void>> {
   await mkdir(dirname(WATCH_LOCK_PATH), { recursive: true });
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const handle = await open(WATCH_LOCK_PATH, "wx");
-      await handle.writeFile(String(process.pid));
-      await handle.close();
-      return async () => {
+  // The pid is written first, then the file is linked into place. A link is all or nothing,
+  // so no watcher ever sees an empty lock.
+  const temp = `${WATCH_LOCK_PATH}.${process.pid}.tmp`;
+  await writeFile(temp, String(process.pid), "utf8");
+
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await link(temp, WATCH_LOCK_PATH);
+        return async () => {
+          await rm(WATCH_LOCK_PATH, { force: true });
+        };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          throw error;
+        }
+
+        const pid = Number((await readFile(WATCH_LOCK_PATH, "utf8").catch(() => "")).trim());
+        if (pid && pidAlive(pid)) {
+          throw new SpotError("BAD_INPUT", `A watcher already runs (pid ${pid}).`, {
+            hint: "Run `spot watch status`. Only one watcher is necessary.",
+            extra: { pid },
+          });
+        }
+
         await rm(WATCH_LOCK_PATH, { force: true });
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw error;
       }
-
-      const pid = Number((await readFile(WATCH_LOCK_PATH, "utf8").catch(() => "")).trim());
-      if (pid && pidAlive(pid)) {
-        throw new SpotError("BAD_INPUT", `A watcher already runs (pid ${pid}).`, {
-          hint: "Run `spot watch status`. Only one watcher is necessary.",
-          extra: { pid },
-        });
-      }
-
-      await rm(WATCH_LOCK_PATH, { force: true });
     }
+  } finally {
+    await rm(temp, { force: true });
   }
 
   throw new SpotError("INTERNAL", "Cannot take the watcher lock.");
@@ -275,8 +284,10 @@ export async function runWatch(options: { log: (line: string) => void; signal?: 
 
 export const LAUNCH_LABEL = "com.spotify-cli.watch";
 
+// SPOT_LAUNCH_AGENTS_DIR moves the file, so tests never touch the real LaunchAgents folder.
 export function launchAgentPath(): string {
-  return join(homedir(), "Library", "LaunchAgents", `${LAUNCH_LABEL}.plist`);
+  const dir = process.env.SPOT_LAUNCH_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
+  return join(dir, `${LAUNCH_LABEL}.plist`);
 }
 
 function escapeXml(text: string): string {
@@ -315,14 +326,6 @@ ${envXml}
 `;
 }
 
-function launchctl(args: string[]): Promise<{ ok: boolean; output: string }> {
-  return new Promise((resolve) => {
-    execFile("launchctl", args, (error, stdout, stderr) => {
-      resolve({ ok: !error, output: `${stdout}${stderr}`.trim() });
-    });
-  });
-}
-
 function requireMac(): void {
   if (process.platform !== "darwin") {
     throw new SpotError("BAD_INPUT", "`spot watch install` works only on macOS.", {
@@ -343,8 +346,8 @@ export async function installLaunchAgent(script: string): Promise<{ path: string
   await writeFile(path, launchAgentPlist(process.execPath, script, env), "utf8");
 
   const domain = `gui/${process.getuid?.() ?? 501}`;
-  await launchctl(["bootout", `${domain}/${LAUNCH_LABEL}`]);
-  const loaded = await launchctl(["bootstrap", domain, path]);
+  await runtime.launchctl(["bootout", `${domain}/${LAUNCH_LABEL}`]);
+  const loaded = await runtime.launchctl(["bootstrap", domain, path]);
   if (!loaded.ok) {
     throw new SpotError("INTERNAL", `launchctl did not start the watcher: ${loaded.output}`, { extra: { path } });
   }
@@ -355,7 +358,7 @@ export async function installLaunchAgent(script: string): Promise<{ path: string
 export async function uninstallLaunchAgent(): Promise<{ path: string; removed: boolean }> {
   requireMac();
   const path = launchAgentPath();
-  await launchctl(["bootout", `gui/${process.getuid?.() ?? 501}/${LAUNCH_LABEL}`]);
+  await runtime.launchctl(["bootout", `gui/${process.getuid?.() ?? 501}/${LAUNCH_LABEL}`]);
   const existed = await readFile(path).then(() => true, () => false);
   await rm(path, { force: true });
   return { path, removed: existed };

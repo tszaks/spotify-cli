@@ -7,6 +7,11 @@ import { runtime } from "../../src/runtime.js";
 // No real waits in tests.
 runtime.sleep = async () => undefined;
 runtime.launchSpotify = async () => false;
+export const launchctlCalls: string[][] = [];
+runtime.launchctl = async (args) => {
+  launchctlCalls.push(args);
+  return { ok: true, output: "" };
+};
 
 export async function login(tokens: Record<string, unknown> = {}): Promise<void> {
   await mkdir(APP_DIR, { recursive: true });
