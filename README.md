@@ -396,7 +396,7 @@ hash -r
 
 ## Roadmap
 
-Current release: `v2.0.1`
+Current release: `v2.0.2`
 
 Ideas for later, not scheduled:
 

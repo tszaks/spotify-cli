@@ -15,7 +15,7 @@ import {
 } from "../src/paths.js";
 import type { NowPlaying } from "../src/playback.js";
 import { insertNote, NOTES_TEMPLATE, weeklyScore } from "../src/profile.js";
-import { emptyState, launchAgentPlist, observe, takeWatchLock } from "../src/watch.js";
+import { emptyState, launchAgentPlist, observe, stableNodePath, takeWatchLock } from "../src/watch.js";
 import { launchctlCalls, login, logout, spot } from "./helpers/cli.js";
 import { launchAgentPath } from "../src/watch.js";
 import { device, FakeSpotify, track } from "./helpers/fake-spotify.js";
@@ -399,5 +399,24 @@ describe("spot watch install and uninstall", () => {
 
   it.runIf(process.platform !== "darwin")("says that install works only on macOS", async () => {
     expect((await spot(["watch", "install"])).json.error.code).toBe("BAD_INPUT");
+  });
+});
+
+describe("stableNodePath", () => {
+  it("uses a PATH link to the same Node, so an upgrade does not break the watcher", async () => {
+    const { symlink } = await import("node:fs/promises");
+    const cellar = await mkdtemp(join(tmpdir(), "spot-cellar-"));
+    const bin = await mkdtemp(join(tmpdir(), "spot-bin-"));
+    const other = await mkdtemp(join(tmpdir(), "spot-other-"));
+    await writeFile(join(cellar, "node"), "");
+    await writeFile(join(other, "node"), "");
+    await symlink(join(cellar, "node"), join(bin, "node"));
+
+    expect(await stableNodePath(join(cellar, "node"), [other, bin].join(":"))).toBe(join(bin, "node"));
+    expect(await stableNodePath(join(cellar, "node"), other)).toBe(join(cellar, "node"));
+
+    // A relative PATH entry would mean a different file when launchd starts in /.
+    const { relative } = await import("node:path");
+    expect(await stableNodePath(join(cellar, "node"), relative(process.cwd(), bin))).toBe(join(cellar, "node"));
   });
 });
