@@ -18,10 +18,12 @@ A TypeScript CLI (`spot`) that controls Spotify through the official Web API and
 - `src/playback.ts`, `src/search.ts`, `src/playlists.ts`, `src/taste.ts`: one module for each area of the Spotify API.
 - `src/match.ts`, `src/resolve.ts`: decide if a search result is the song that a line of text asked for.
 - `src/dj.ts`: the DJ set (a playlist plus `dj-session.json`).
+- `src/listening.ts`, `src/watch.ts`: the listening log (`listening.jsonl`), the watcher that writes it (`observe` holds the rules and is pure), the launchd file, and the import of a Spotify data download.
+- `src/feelings.ts`, `src/profile.ts`: the user's words (`feelings.jsonl`, bans), the taste notes file, the profile and the weekly score.
 - `src/shapes.ts`: the small output shapes (track, device, playlist).
 - `src/runtime.ts`: side effects that tests replace (sleep, start the Spotify app).
 - `src/pkce.ts`, `src/auth-session.ts`, `src/auth-callback.ts`: PKCE login and the redirect finish step.
-- `src/config-store.ts`, `src/token-store.ts`, `src/paths.ts`: files under `~/.config/spotify-cli/`.
+- `src/config-store.ts`, `src/token-store.ts`, `src/paths.ts`: files under `~/.config/spotify-cli/`. The taste files there (`listening.jsonl`, `feelings.jsonl`, `taste-notes.md`) only grow or are edited by the user. Never rewrite them in bulk.
 - `skills/spot/SKILL.md`: the manual for agents that use the CLI. `spot guide` prints it.
 - `test/helpers/fake-spotify.ts`: an in-memory copy of the Spotify API. `test/helpers/cli.ts` runs a command as an agent does.
 

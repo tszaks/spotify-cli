@@ -1,6 +1,6 @@
 {
   "name": "spotify-cli",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Control Spotify from the command line, by a person or by an AI agent",
   "main": "dist/index.js",
   "scripts": {

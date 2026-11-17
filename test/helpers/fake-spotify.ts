@@ -199,6 +199,12 @@ export class FakeSpotify {
     const active = this.devices.find((item) => item.is_active);
     const key = `${method} ${path}`;
 
+    const trackMatch = path.match(/^\/tracks\/([^/]+)$/);
+    if (trackMatch && method === "GET") {
+      const found = this.catalog.find((item) => item.uri === `spotify:track:${trackMatch[1]}`);
+      return found ? json(200, found) : apiError(404, "Non existing id");
+    }
+
     const playlistMatch = path.match(/^\/playlists\/([^/]+)(\/items)?$/);
     if (playlistMatch) {
       const playlist = this.playlists.get(playlistMatch[1]);

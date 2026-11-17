@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 
 import { Command, CommanderError } from "commander";
 import open from "open";
@@ -26,6 +27,16 @@ import {
   stopSession,
 } from "./dj.js";
 import { exitCodeFor, SpotError, toErrorPayload } from "./errors.js";
+import {
+  addFeeling,
+  assertKind,
+  type BanRule,
+  banFor,
+  currentFeelings,
+  type Feeling,
+  readFeelings,
+} from "./feelings.js";
+import { importHistory, readEvents } from "./listening.js";
 import {
   parseBoundedInteger,
   parseOnOffState,
@@ -62,9 +73,17 @@ import {
   spotifyRequest,
 } from "./spotify-client.js";
 import { normalizeSpotifyUri } from "./spotify-uri.js";
+import { addNote, buildProfile, DEFAULT_SECTION, type Profile, type WeekScore, weeklyScore } from "./profile.js";
 import { getTaste } from "./taste.js";
+import {
+  installLaunchAgent,
+  pollOnceLocked,
+  runWatch,
+  uninstallLaunchAgent,
+  watchStatus,
+} from "./watch.js";
 
-export const VERSION = "2.0.0";
+export const VERSION = "2.0.1";
 
 export type OutputMode = "json" | "text";
 
@@ -126,6 +145,41 @@ export function resolveOutputMode(args: string[], io: Pick<Io, "isTTY" | "env">)
   }
 
   return io.isTTY ? "text" : "json";
+}
+
+export const LEARN_HINT =
+  "Learn from this set: write each lesson with `spot taste note \"...\"` (for example: skips songs over 6 minutes when working). Record the user's words with `spot feel`.";
+
+function pct(value: number | null): string {
+  return value === null ? "-" : `${Math.round(value * 100)}%`;
+}
+
+function describeScore(score: WeekScore[]): string {
+  return score
+    .map((week) => `  ${week.weekStart}: agent songs ${week.dj.plays} played, ${pct(week.dj.skipRate)} skipped (new ${pct(week.dj.newSongs.skipRate)}, known ${pct(week.dj.knownSongs.skipRate)}) · your own picks ${pct(week.you.skipRate)} skipped`)
+    .join("\n");
+}
+
+function describeProfile(profile: Profile): string {
+  const said = (items: Profile["said"]["loved"]) =>
+    items.map((item) => `  ${item.scope === "artist" ? `artist ${item.artists.join(", ")}` : `${item.name ?? item.uri}${item.artists.length ? ` - ${item.artists.join(", ")}` : ""}`}${item.why ? ` (${item.why})` : ""}`).join("\n") || "  none";
+  const ranks = (items: Array<{ name: string; plays: number; skipRate: number | null }>) =>
+    items.map((item) => `  ${item.name}: ${item.plays} plays, ${pct(item.skipRate)} skipped`).join("\n") || "  none";
+
+  return [
+    `Listening data: ${profile.data.events} plays${profile.data.from ? ` from ${profile.data.from.slice(0, 10)} to ${profile.data.to?.slice(0, 10)}` : ""}. Agent-selected: ${profile.data.djSongs}.`,
+    `Taste notes (${profile.notes.path}):\n${profile.notes.text?.trim() ?? "  none yet"}`,
+    `Banned:\n${said(profile.said.banned)}`,
+    `Loved:\n${said(profile.said.loved)}`,
+    `Less often:\n${said(profile.said.meh)}`,
+    `Favourite artists, last ${profile.data.recentDays} days:\n${ranks(profile.favourites.artistsRecent)}`,
+    `Favourite songs, last ${profile.data.recentDays} days:\n${ranks(profile.favourites.songs)}`,
+    `Often skipped artists:\n${ranks(profile.oftenSkipped.artists)}`,
+    `Often skipped songs:\n${ranks(profile.oftenSkipped.songs)}`,
+    `Situations:\n${profile.situations.map((item) => `  ${item.when} (${item.plays} plays, ${pct(item.skipRate)} skipped): ${item.artists.join(", ")}`).join("\n") || "  not enough data"}`,
+    `Devices:\n${profile.devices.map((item) => `  ${item.device} (${item.plays} plays): ${item.artists.join(", ")}`).join("\n") || "  not enough data"}`,
+    `Score by week:\n${describeScore(profile.score)}`,
+  ].join("\n\n");
 }
 
 function numbered(items: Array<{ label: string }>): string {
@@ -204,13 +258,63 @@ async function readSongLines(items: string[], from: string | undefined, io: Io):
   return lines;
 }
 
+type Blocked = { input: string; uri: string; label?: string; ban: BanRule };
+
+type SongsResult = ResolveResult & { blocked: Blocked[] };
+
+// The user's bans are kept by the tool, so an agent cannot forget them.
+async function applyBans(result: ResolveResult, include: boolean): Promise<SongsResult> {
+  if (include) {
+    return { ...result, blocked: [] };
+  }
+
+  const feelings = currentFeelings(await readFeelings());
+
+  // A URI or link input has no artist names. Look them up, but only when an artist ban needs them.
+  if (feelings.some((feeling) => feeling.kind === "ban" && feeling.scope === "artist")) {
+    for (const item of result.resolved) {
+      if ((item.artists ?? []).length === 0 && item.uri.startsWith("spotify:track:")) {
+        const raw = await spotifyRequest<Record<string, any>>(`/tracks/${item.uri.split(":")[2]}`);
+        const track = toTrack(raw);
+        if (track) {
+          item.name = track.name;
+          item.artists = track.artists;
+          item.label = track.label;
+        }
+      }
+    }
+  }
+
+  const blocked: Blocked[] = [];
+  const resolved = result.resolved.filter((item) => {
+    const ban = banFor(item, feelings);
+    if (ban) {
+      blocked.push({ input: item.input, uri: item.uri, label: item.label, ban });
+    }
+
+    return !ban;
+  });
+
+  return { ...result, resolved, blocked };
+}
+
+function describeBlocked(result: { blocked: Blocked[] }): string {
+  if (result.blocked.length === 0) {
+    return "";
+  }
+
+  const lines = result.blocked.map((item) =>
+    `  ${item.label ?? item.input} (banned ${item.ban.scope}${item.ban.why ? `: ${item.ban.why}` : ""})`);
+  return `\nBlocked by your bans (${result.blocked.length}):\n${lines.join("\n")}`;
+}
+
 // Songs come as names ("Artist - Title"), URIs or links, as arguments or from a file.
 async function resolveSongs(
   items: string[],
-  options: { from?: string; loose?: boolean },
+  options: { from?: string; loose?: boolean; includeBanned?: boolean },
   io: Io,
   required: boolean,
-): Promise<ResolveResult> {
+): Promise<SongsResult> {
   const lines = await readSongLines(items, options.from, io);
 
   if (lines.length === 0) {
@@ -220,15 +324,19 @@ async function resolveSongs(
       });
     }
 
-    return { resolved: [], missed: [], duplicatesRemoved: 0 };
+    return { resolved: [], missed: [], duplicatesRemoved: 0, blocked: [] };
   }
 
-  const result = await resolveNames(lines, { loose: options.loose });
+  const result = await applyBans(
+    await resolveNames(lines, { loose: options.loose }),
+    Boolean(options.includeBanned),
+  );
 
   if (result.resolved.length === 0) {
-    throw new SpotError("NOT_FOUND", "Spotify found none of the songs.", {
-      hint: "Check the names. Use the form: Artist - Title.",
-      extra: { missed: result.missed },
+    const allBanned = result.blocked.length > 0;
+    throw new SpotError("NOT_FOUND", allBanned ? "Each song found is banned by the user." : "Spotify found none of the songs.", {
+      hint: allBanned ? "Select different songs. Read the bans with `spot taste profile`." : "Check the names. Use the form: Artist - Title.",
+      extra: { missed: result.missed, blocked: result.blocked },
     });
   }
 
@@ -273,7 +381,8 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
   const withSongs = (command: Command): Command =>
     command
       .option("--from <file>", "File with one song for each line. Use - for stdin.")
-      .option("--loose", "Accept weak matches. The default reports them as not found.");
+      .option("--loose", "Accept weak matches. The default reports them as not found.")
+      .option("--include-banned", "Keep songs that the user banned. Use only when the user asks for one.");
 
   program
     .command("guide")
@@ -582,7 +691,7 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
       }),
     );
 
-  program
+  const tasteCommand = program
     .command("taste")
     .option("-l, --limit <limit>", "Items for each list (max 50)", Number)
     .description("Show what you like: top artists, top songs, recent and saved songs")
@@ -602,6 +711,189 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
         ].join("\n\n");
 
         return { data: taste, text };
+      }),
+    );
+
+  tasteCommand
+    .command("profile")
+    .option("--days <days>", "Days of data for the recent lists (max 3650)", Number)
+    .option("-l, --limit <limit>", "Items for each list (max 50)", Number)
+    .description("What the tool learned about the user: notes, bans, loves, favourites, skips, situations, score. Read it before a set.")
+    .action((options) =>
+      handle(async () => {
+        const profile = await buildProfile({
+          days: parseLimit(options.days, "days", 3650, 180),
+          limit: parseLimit(options.limit, "limit", 50, 10),
+        });
+        return { data: profile, text: describeProfile(profile) };
+      }),
+    );
+
+  tasteCommand
+    .command("note")
+    .argument("<text...>", "One lesson, in plain words")
+    .option("--section <name>", `Section of the notes file (default: "${DEFAULT_SECTION}")`)
+    .description("Add one lesson to the taste notes file that agents read before each set")
+    .action((words: string[], options) =>
+      handle(async () => {
+        const text = words.join(" ").trim();
+        if (!text) {
+          throw new SpotError("BAD_INPUT", "Give the lesson as text.");
+        }
+
+        const added = await addNote(text, options.section);
+        return { data: added, text: `Added to ${added.path}:\n${added.line}` };
+      }),
+    );
+
+  tasteCommand
+    .command("score")
+    .option("--weeks <weeks>", "How many weeks (max 104)", Number)
+    .description("Skip rate of agent-selected songs for each week. If the agent learns, it goes down.")
+    .action((options) =>
+      handle(async () => {
+        const score = weeklyScore(await readEvents(), parseLimit(options.weeks, "weeks", 104, 8));
+        return { data: { score }, text: `Score by week:\n${describeScore(score)}` };
+      }),
+    );
+
+  program
+    .command("feel")
+    .argument("<feeling>", "love, meh (play less often), ban (never play), or clear (forget the earlier word)")
+    .argument("[song...]", "Song name, URI or link. With no song: the song that plays now.")
+    .option("--artist", "Apply to the artist, not only the song")
+    .option("--why <text>", "The user's reason, in their words")
+    .description("Record what the user said about a song or an artist. Bans are enforced in sets and playlists.")
+    .action((kindText: string, songWords: string[], options) =>
+      handle(async () => {
+        const kind = assertKind(kindText);
+        const scope = options.artist ? "artist" : "song";
+        let target: { uri?: string; name?: string; artists: string[]; device?: string };
+
+        if (songWords.length > 0) {
+          const input = songWords.join(" ");
+          const result = await resolveNames([input], {});
+          const item = result.resolved[0];
+          if (!item) {
+            throw new SpotError("NOT_FOUND", `Spotify found no song for "${input}".`, {
+              hint: "Use the form: Artist - Title.",
+              extra: { missed: result.missed },
+            });
+          }
+
+          target = { uri: item.uri, name: item.name, artists: item.artists ?? [] };
+        } else {
+          const now = await getNow();
+          if (!now.track) {
+            throw new SpotError("NOT_FOUND", "Nothing plays now.", { hint: "Give the song as Artist - Title." });
+          }
+
+          target = { uri: now.track.uri, name: now.track.name, artists: now.track.artists, device: now.device?.name };
+        }
+
+        if (scope === "artist" && target.artists.length === 0) {
+          throw new SpotError("BAD_INPUT", "The artist of this song is not known.", {
+            hint: "Give the song as Artist - Title, not as a URI.",
+          });
+        }
+
+        const feeling: Feeling = {
+          at: new Date().toISOString(),
+          kind,
+          scope,
+          ...(scope === "song" ? { uri: target.uri, name: target.name } : {}),
+          artists: target.artists,
+          why: options.why,
+          device: target.device,
+        };
+        await addFeeling(feeling);
+
+        const what = scope === "artist" ? `artist ${target.artists.join(", ")}` : `${target.name} - ${target.artists.join(", ")}`;
+        const words: Record<string, string> = {
+          love: "Loved",
+          meh: "Marked to play less often",
+          ban: "Banned. Sets and playlists will not include",
+          clear: "Forgot the earlier word about",
+        };
+        return { data: { feeling }, text: `${words[kind]}: ${what}.` };
+      }),
+    );
+
+  const historyCommand = program
+    .command("history")
+    .description("The listening history that the tool keeps for taste learning");
+
+  historyCommand
+    .command("import")
+    .argument("<paths...>", "The unzipped Spotify data download: a folder, or Streaming_History_Audio_*.json files")
+    .description("Import years of plays from a Spotify data download. Safe to run again: plays already imported are skipped.")
+    .action((paths: string[]) =>
+      handle(async () => {
+        const result = await importHistory(paths);
+        return {
+          data: result,
+          text: `Imported ${result.added} plays from ${result.files.length} files${result.from ? ` (${result.from.slice(0, 10)} to ${result.to?.slice(0, 10)})` : ""}. Already imported: ${result.alreadyImported}. Rows with no song: ${result.skippedRows}.`,
+        };
+      }),
+    );
+
+  const watchCommand = program
+    .command("watch")
+    .description("Record each song that plays, on all devices, for taste learning");
+
+  watchCommand
+    .command("run")
+    .option("--once", "Check one time and stop")
+    .description("Check what plays every 20 seconds and record each song when it ends. Runs until stopped.")
+    .action((options) =>
+      handle(async () => {
+        if (options.once) {
+          const { events, state } = await pollOnceLocked();
+          return {
+            data: { recorded: events, current: state.current, lastError: state.lastError },
+            text: `Recorded ${events.length} songs. Now: ${state.current ? `${state.current.name} - ${state.current.artists.join(", ")}` : "nothing"}.`,
+          };
+        }
+
+        await runWatch({ log: (line) => io.out(line) });
+        return { data: { stopped: true }, text: "Watcher stopped." };
+      }),
+    );
+
+  watchCommand
+    .command("install")
+    .description("macOS: start the watcher now and at each login, in the background")
+    .action(() =>
+      handle(async () => {
+        const script = fileURLToPath(new URL("./index.js", import.meta.url));
+        const result = await installLaunchAgent(script);
+        return { data: result, text: `The watcher runs now and starts at each login.\n${result.path}` };
+      }),
+    );
+
+  watchCommand
+    .command("uninstall")
+    .description("macOS: stop the background watcher and remove it")
+    .action(() =>
+      handle(async () => {
+        const result = await uninstallLaunchAgent();
+        return { data: result, text: result.removed ? "The watcher is stopped and removed." : "No watcher was installed." };
+      }),
+    );
+
+  watchCommand
+    .command("status")
+    .description("Is the watcher running, and when did it last check?")
+    .action(() =>
+      handle(async () => {
+        const status = await watchStatus();
+        const text = [
+          `Running: ${status.running ? `yes (pid ${status.pid})` : "no"}. Installed: ${status.installed ? "yes" : "no"}.`,
+          `Last check: ${status.lastPollAt ?? "never"}. Songs recorded: ${status.recorded}.`,
+          status.current ? `Now: ${status.current}` : "",
+          status.lastError ? `Last error: ${status.lastError.code}: ${status.lastError.message}` : "",
+        ].filter(Boolean).join("\n");
+        return { data: status, text };
       }),
     );
 
@@ -938,6 +1230,7 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
         playlist: { ...playlist, total: found.resolved.length },
         added: found.resolved,
         missed: found.missed,
+        blocked: found.blocked,
         duplicatesRemoved: found.duplicatesRemoved,
       };
       let text = `Made playlist "${playlist.name}" with ${found.resolved.length} songs. id=${playlist.id}`;
@@ -955,7 +1248,7 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
         }
       }
 
-      return { data, text: `${text}${describeMissed(found)}` };
+      return { data, text: `${text}${describeMissed(found)}${describeBlocked(found)}` };
     }),
   );
 
@@ -976,9 +1269,10 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
           playlist,
           added: found.resolved,
           missed: found.missed,
+          blocked: found.blocked,
           duplicatesRemoved: found.duplicatesRemoved,
         },
-        text: `Added ${found.resolved.length} songs.${describeMissed(found)}`,
+        text: `Added ${found.resolved.length} songs.${describeMissed(found)}${describeBlocked(found)}`,
       };
     }),
   );
@@ -1000,9 +1294,10 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
           playlist,
           tracks: found.resolved,
           missed: found.missed,
+          blocked: found.blocked,
           duplicatesRemoved: found.duplicatesRemoved,
         },
-        text: `The playlist now has ${found.resolved.length} songs.${describeMissed(found)}`,
+        text: `The playlist now has ${found.resolved.length} songs.${describeMissed(found)}${describeBlocked(found)}`,
       };
     }),
   );
@@ -1082,9 +1377,10 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
           woke: started.woke,
           tracks: session.tracks,
           missed: found.missed,
+          blocked: found.blocked,
           duplicatesRemoved: found.duplicatesRemoved,
         },
-        text: `DJ set "${session.name}" started with ${session.tracks.length} songs${started.device ? ` on ${started.device.name}` : ""}.\n${numbered(session.tracks)}${describeMissed(found)}`,
+        text: `DJ set "${session.name}" started with ${session.tracks.length} songs${started.device ? ` on ${started.device.name}` : ""}.\n${numbered(session.tracks)}${describeMissed(found)}${describeBlocked(found)}`,
       };
     }),
   );
@@ -1110,8 +1406,8 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
       const result = await steerSession(toSetTracks(found));
 
       return {
-        data: { ...result, missed: found.missed, duplicatesRemoved: found.duplicatesRemoved },
-        text: `Removed ${result.removed} songs that were next. Added ${result.added.length}.\n${numbered(result.added)}${describeMissed(found)}`,
+        data: { ...result, missed: found.missed, blocked: found.blocked, duplicatesRemoved: found.duplicatesRemoved },
+        text: `Removed ${result.removed} songs that were next. Added ${result.added.length}.\n${numbered(result.added)}${describeMissed(found)}${describeBlocked(found)}`,
       };
     }),
   );
@@ -1122,7 +1418,10 @@ function buildProgram(handle: Handle, io: Io, mode: OutputMode): Command {
     .action(() =>
       handle(async () => {
         const status = await stopSession();
-        return { data: status, text: describeStatus(status) };
+        return {
+          data: { ...status, learn: LEARN_HINT },
+          text: `${describeStatus(status)}\n\n${LEARN_HINT}`,
+        };
       }),
     );
 

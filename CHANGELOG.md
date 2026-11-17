@@ -6,9 +6,23 @@ All notable changes to Spotify CLI are listed here. The format follows [Keep a C
 
 Ideas for a later release, not committed to a date:
 
-- `spot watch`: a stream of playback events for agents.
 - A login that finishes by itself with a local callback address.
 - An MCP server mode.
+
+## [2.0.1] - 2026-11-16
+
+Taste memory. An agent can now learn the user's taste over time, and the tool shows if it learns.
+
+### Added
+- `spot watch run`: records each song that plays, on all devices, in `listening.jsonl`: how long it played, if it was skipped, the device, and if an agent's DJ set selected it. It asks Spotify every 20 seconds while music plays, and less often when nothing plays.
+- `spot watch install` / `uninstall` / `status`: keep the watcher running in the background on macOS (launchd).
+- `spot feel love|meh|ban|clear [song] [--artist] [--why]`: record what the user said about a song or an artist. With no song, it uses the song that plays now.
+- Bans are enforced: `dj start`, `dj steer` and `playlist create|add|replace` leave banned songs out and list them in `blocked`. `--include-banned` keeps them.
+- `spot taste profile`: one reply with the taste notes, the user's words, favourites, often-skipped artists and songs, situations (time of day), devices, the last sets and the weekly score.
+- `spot taste note`: add one lesson to `taste-notes.md`, the file that agents read before each set. The user can edit it.
+- `spot taste score`: skip rate of agent-selected songs for each week, with new songs and known songs apart.
+- `spot history import`: import years of plays from a Spotify data download (Extended streaming history, or the short account data). Safe to run again.
+- `spot dj stop` tells the agent how to keep the lessons of the set.
 
 ## [2.0.0] - 2026-11-16
 

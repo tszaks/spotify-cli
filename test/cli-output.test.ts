@@ -134,7 +134,7 @@ describe("help, version and guide", () => {
   });
 
   it("prints the version", async () => {
-    expect((await spot(["--version"])).out).toBe("2.0.0");
+    expect((await spot(["--version"])).out).toBe("2.0.1");
   });
 
   it("prints the agent manual as plain text in both modes", async () => {
