@@ -49,6 +49,7 @@ It uses Spotify's official Web API with the PKCE login flow, so you never handle
 - **Play by name.** `spot play "fear nf"` finds the song and plays it. No URI necessary.
 - **DJ sets.** `spot dj start` plays a list of songs in order. `spot dj status` shows what was skipped. `spot dj steer` changes the songs that come next.
 - **Playlists from song names.** `spot playlist create "Road trip" --from songs.txt` makes a playlist in one step and reports the songs that Spotify does not have.
+- **Taste memory.** A background watcher records each song you play and each skip. `spot feel` keeps your loves and bans, and bans are enforced. `spot taste profile` gives an agent all of it before a set, and `spot taste score` shows if the agent's songs get fewer skips over time.
 - **Made for agents.** One JSON object for each command, error codes with a next step, and a short manual (`spot guide`).
 - **Spotify PKCE login.** No client secret, and a secure redirect finishes the flow.
 - **Device control.** List your Spotify Connect devices and transfer playback between them.
@@ -243,6 +244,32 @@ spot taste
 
 One reply with your top artists, top songs, recent songs and saved songs. A part that Spotify refuses is listed in `unavailable` with the cause. The other parts stay correct.
 
+### Taste memory
+
+Spotify forgets nothing, but it tells apps very little. `spot` keeps its own record, so an agent can learn your taste over time.
+
+```bash
+spot watch install            # macOS: record each song you play, in the background (start at login)
+spot watch status             # is it running, and when did it last check?
+
+spot feel love                # you like the song that plays now
+spot feel ban "Artist - Title" --why "too slow"
+spot feel ban --artist "Artist - Title"   # never play this artist
+spot feel clear "Artist - Title"          # forget the earlier word
+
+spot taste profile            # what the tool learned: notes, bans, favourites, skips, situations, score
+spot taste note "No vocals when working"
+spot taste score              # skip rate of the agent's songs for each week
+
+spot history import ~/Downloads/my_spotify_data   # years of plays from a Spotify data download
+```
+
+- The watcher asks Spotify what plays every 20 seconds while music plays, and every 1 to 2 minutes when nothing plays. A song that changes before its end is a skip. A song that stops (pause, app closed) is not.
+- Bans apply to DJ sets and to playlists that `spot` makes. `--include-banned` turns this off for one command. `spot play` of one song is not blocked: that is a direct request.
+- `taste-notes.md` is plain text. Edit it as you like. "Rules you said" is for your own rules.
+- Your Spotify data download: spotify.com, Account, Privacy, "Extended streaming history". It can take up to 30 days. Unzip it, then import the folder.
+- All of this stays on your computer, in `~/.config/spotify-cli/`.
+
 ### Auth
 
 ```bash
@@ -361,15 +388,19 @@ hash -r
 ~/.config/spotify-cli/tokens.json        (mode 600: only you can read it)
 ~/.config/spotify-cli/auth-session.json
 ~/.config/spotify-cli/dj-session.json    (the current DJ set)
+~/.config/spotify-cli/listening.jsonl    (one line for each song that ended)
+~/.config/spotify-cli/feelings.jsonl     (loves, bans)
+~/.config/spotify-cli/taste-notes.md     (the taste file that agents read; you can edit it)
+~/.config/spotify-cli/watch-state.json, watch.lock, watch.log   (the watcher)
 ```
 
 ## Roadmap
 
-Current release: `v2.0.0`
+Current release: `v2.0.1`
 
 Ideas for later, not scheduled:
 
-- `spot watch`: a stream of events (song change, skip, pause) so an agent can react with no polling
+- mood and style labels for songs from Last.fm (Spotify no longer gives this data)
 - a login that finishes by itself with a local callback address
 - an MCP server mode for agents that have no shell
 

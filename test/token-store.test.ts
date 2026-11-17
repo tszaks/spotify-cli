@@ -80,7 +80,11 @@ describe("withFileLock", () => {
 
     await Promise.all([job("a"), job("b")]);
 
-    expect(order).toEqual(["a start", "a end", "b start", "b end"]);
+    // Either job can win the lock. The rule is that they never overlap.
+    expect([
+      ["a start", "a end", "b start", "b end"],
+      ["b start", "b end", "a start", "a end"],
+    ]).toContainEqual(order);
   });
 
   it("removes the lock when the action fails", async () => {
