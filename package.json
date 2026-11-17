@@ -1,7 +1,7 @@
 {
   "name": "spotify-cli",
-  "version": "1.1.0",
-  "description": "Control Spotify from the command line using the Spotify Web API",
+  "version": "2.0.0",
+  "description": "Control Spotify from the command line, by a person or by an AI agent",
   "main": "dist/index.js",
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json && chmod +x dist/index.js",
@@ -14,7 +14,8 @@
     "cli",
     "spotify-connect",
     "spotify-web-api",
-    "typescript"
+    "typescript",
+    "agent"
   ],
   "author": "Tyler Szakacs",
   "bin": {
@@ -22,6 +23,7 @@
   },
   "files": [
     "dist",
+    "skills",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

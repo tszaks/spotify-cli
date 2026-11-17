@@ -25,7 +25,11 @@ export async function readAuthSession(): Promise<AuthSession | null> {
 
 export async function writeAuthSession(session: AuthSession): Promise<void> {
   await mkdir(dirname(AUTH_SESSION_PATH), { recursive: true });
-  await writeFile(AUTH_SESSION_PATH, `${JSON.stringify(session, null, 2)}\n`, "utf8");
+  // The code verifier is a login secret until `auth finish` uses it.
+  await writeFile(AUTH_SESSION_PATH, `${JSON.stringify(session, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
 }
 
 export async function deleteAuthSession(): Promise<void> {

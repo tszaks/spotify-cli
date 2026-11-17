@@ -1,3 +1,5 @@
+import { SpotError } from "./errors.js";
+
 export function parseOnOffState(value: string): boolean {
   const normalized = value.trim().toLowerCase();
 
@@ -9,7 +11,7 @@ export function parseOnOffState(value: string): boolean {
     return false;
   }
 
-  throw new Error("Expected 'on' or 'off'.");
+  throw new SpotError("BAD_INPUT", "Expected 'on' or 'off'.");
 }
 
 export function parseBoundedInteger(
@@ -21,17 +23,17 @@ export function parseBoundedInteger(
   },
 ): number {
   if (!Number.isFinite(value)) {
-    throw new Error(`${label} must be a number.`);
+    throw new SpotError("BAD_INPUT", `${label} must be a number.`);
   }
 
   const integer = Math.floor(value);
 
   if (options?.min !== undefined && integer < options.min) {
-    throw new Error(`${label} must be at least ${options.min}.`);
+    throw new SpotError("BAD_INPUT", `${label} must be at least ${options.min}.`);
   }
 
   if (options?.max !== undefined && integer > options.max) {
-    throw new Error(`${label} must be at most ${options.max}.`);
+    throw new SpotError("BAD_INPUT", `${label} must be at most ${options.max}.`);
   }
 
   return integer;

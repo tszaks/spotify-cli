@@ -38,8 +38,16 @@ export function resolveDevice(
   }
 
   const normalizedSelector = selector.trim().toLowerCase();
-
-  return devices.find(
+  const exactNameMatch = devices.find(
     (device) => device.name.trim().toLowerCase() === normalizedSelector,
   );
+  if (exactNameMatch) {
+    return exactNameMatch;
+  }
+
+  // "macbook" finds "Tyler's MacBook Pro", but only when one device matches.
+  const partialMatches = devices.filter((device) =>
+    device.name.toLowerCase().includes(normalizedSelector));
+
+  return partialMatches.length === 1 ? partialMatches[0] : undefined;
 }
